@@ -31,7 +31,9 @@ class MloopConfig:
 
         # The first time doesn't work for some reason
         first_port = self.port_translation.get(self.ports[0])
-        self.config_port_to_mloop(first_port)
+
+        if first_port:
+            self.config_port_to_mloop(first_port)
 
         for port in self.ports:
             logical_port = self.port_translation.get(port)
@@ -47,6 +49,7 @@ class MloopConfig:
         logical_ports = self.parse_range(port_range)
 
         if not logical_ports:
+            print("Invalid port range")
             return
         
         for logical_port in logical_ports:
@@ -57,8 +60,7 @@ class MloopConfig:
     def build_translation_dict(self):
         self.port_translation = {}
 
-        if not os.path.exists(SAISDKDUMP_PATH):
-            subprocess.run(["saisdkdump", "-f", SAISDKDUMP_PATH], shell=False, stdout=subprocess.PIPE, text=True)
+        subprocess.run(["saisdkdump", "-f", SAISDKDUMP_PATH], shell=False, stdout=subprocess.PIPE, text=True)
 
         with open(SAISDKDUMP_PATH, 'r') as saisdk_file:
             dump_lines = saisdk_file.read()
@@ -87,13 +89,16 @@ class MloopConfig:
         retries = 0    
         subprocess.run(["sx_api_port_phys_loopback.py", "--cmd", "0", "--log_port", logical_port, "--loopback_type", "2", "--force" ], 
                         shell=False, stdout=subprocess.PIPE, text=True)
-        while (not configured) and (retries < 500):
+        while (not configured) and (retries < 10):
             try:
                 check_output_pipe(["echo", "y"], ["sx_api_port_tx_signal_set.py", "--log_port", logical_port, "--state", "up"])      
                 configured = True
             except:
-                print("Retrying to config {0}".format(logical_port))
                 retries += 1
+                if retries < 10:
+                    print("Retrying to config {0}".format(logical_port))
+                else:
+                    print("Failed to config {0}".format(logical_port)
                 time.sleep(10)
                 continue
 
@@ -106,22 +111,23 @@ class MloopConfig:
             if port == port_range[0]:
                 found_first = True
 
+            if port == port_range[1]:
+                found_last = True
+
             if found_first and not found_last:
                 logical_ports.append(logical_port)
                 self.ports.append(port)
             elif found_last and not found_first:
                 print("Error: invalid range - end port found before start port")
 
-            if port == port_range[1]:
-                found_last = True
+            if found_last:
                 break
 
-        if not found_first or (found_first and not found_last):
-            port = port_range[0] if not found_first else port_range[1]
-            print(f"Error: invalid range - {port} doesn't exist")
+        if found_first and not found_last:
+            print(f"Error: invalid range - {port_range[0]} doesn't exist")
             return None
 
-        return logical_ports
+        return logical_ports if logical_ports else None
 
     def read_saved_ports(self):
         full_path = os.path.join(CONFIGURED_PORTS_PATH, CONFIGURED_PORTS_FILE)
