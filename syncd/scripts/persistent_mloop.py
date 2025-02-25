@@ -74,6 +74,8 @@ class MloopConfig:
 
         for line in port_table:
             line = line.split()
+            if len(line) < 3:
+                continue
             self.port_translation[line[1]] = line[2]
 
         self.port_translation = dict(sorted(self.port_translation.items(), key=port_sorting))
@@ -98,7 +100,7 @@ class MloopConfig:
                 if retries < 10:
                     print("Retrying to config {0}".format(logical_port))
                 else:
-                    print("Failed to config {0}".format(logical_port)
+                    print("Failed to config {0}".format(logical_port))
                 time.sleep(10)
                 continue
 
@@ -131,8 +133,14 @@ class MloopConfig:
 
     def read_saved_ports(self):
         full_path = os.path.join(CONFIGURED_PORTS_PATH, CONFIGURED_PORTS_FILE)
+
+        if not os.path.exists(full_path):
+            return False
+
         with open(full_path, 'r') as ports_file:
             self.ports = json.load(ports_file)
+
+        return True
         
 
 def main():
@@ -158,6 +166,9 @@ def main():
             print(f"Error while copying {SERVICE_FILE} to {SERVICE_PATH}: {e}")
 
     mloopconfig = MloopConfig()
+    if not mloopconfig.port_translation:
+        print("Failed to parse ports from SDK file")
+        return
 
     if args.port_range:
         mloopconfig.config_range(args.port_range)
@@ -166,7 +177,9 @@ def main():
         mloopconfig.config_ports(args.ports)
         mloopconfig.save_mloop_ports()
     else:
-        mloopconfig.read_saved_ports()
+        if not mloopconfig.read_saved_ports():
+            print("No port to configure")
+            return
         mloopconfig.config_ports()
 
 
