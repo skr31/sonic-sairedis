@@ -19,8 +19,9 @@ def port_sorting(port):
     return int(port[0][len("Ethernet"):]) if "Ethernet" in port[0] else 0
 
 class MloopConfig:
-    def __init__(self):
+    def __init__(self, loopback_type):
         self.ports = []
+        self.loopback_type = loopback_type
         self.build_translation_dict()
 
     def config_ports(self, ports=None):
@@ -80,16 +81,18 @@ class MloopConfig:
 
         self.port_translation = dict(sorted(self.port_translation.items(), key=port_sorting))
         
-    def save_mloop_ports(self):
+    def save_config(self):
         os.makedirs(CONFIGURED_PORTS_PATH, exist_ok=True)
         full_path = os.path.join(CONFIGURED_PORTS_PATH, CONFIGURED_PORTS_FILE)
+        format_to_save = {"ports": self.ports,
+                          "loopback_type": self.loopback_type}
         with open(full_path, 'w') as ports_file:
-            json.dump(self.ports, ports_file)
+            json.dump(format_to_save, ports_file)
 
     def config_port_to_mloop(self, logical_port):
         configured = False
         retries = 0    
-        subprocess.run(["sx_api_port_phys_loopback.py", "--cmd", "0", "--log_port", logical_port, "--loopback_type", "2", "--force" ], 
+        subprocess.run(["sx_api_port_phys_loopback.py", "--cmd", "0", "--log_port", logical_port, "--loopback_type", str(self.loopback_type), "--force" ], 
                         shell=False, stdout=subprocess.PIPE, text=True)
         while (not configured) and (retries < 10):
             try:
@@ -131,14 +134,16 @@ class MloopConfig:
 
         return logical_ports if logical_ports else None
 
-    def read_saved_ports(self):
+    def read_saved_config(self):
         full_path = os.path.join(CONFIGURED_PORTS_PATH, CONFIGURED_PORTS_FILE)
 
         if not os.path.exists(full_path):
             return False
 
         with open(full_path, 'r') as ports_file:
-            self.ports = json.load(ports_file)
+            saved_config = json.load(ports_file)
+            self.ports = save_config.get("ports")
+            self.loopback_type = save_config.get("loopback_type")
 
         return True
         
@@ -147,6 +152,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--ports", nargs="+", type=str, help="List of ports to be configured to mloop, in the following format: port1 port2 ...")
     parser.add_argument("--port-range", nargs=2, help="Range of ports to be configured to mloop, in the following format: <start_port> <end_port>")
+    parser.add_argument("--loopback-type", type=int, default=2, help="Loopback type")
     args = parser.parse_args()
 
     if args.ports and args.port_range:
@@ -165,7 +171,7 @@ def main():
         except Exception as e:
             print(f"Error while copying {SERVICE_FILE} to {SERVICE_PATH}: {e}")
 
-    mloopconfig = MloopConfig()
+    mloopconfig = MloopConfig(args.loopback_type)
     if not mloopconfig.port_translation:
         print("Failed to parse ports from SDK file")
         return
@@ -175,9 +181,9 @@ def main():
 
     elif args.ports:
         mloopconfig.config_ports(args.ports)
-        mloopconfig.save_mloop_ports()
+        mloopconfig.save_config()
     else:
-        if not mloopconfig.read_saved_ports():
+        if not mloopconfig.read_saved_config():
             print("No port to configure")
             return
         mloopconfig.config_ports()
