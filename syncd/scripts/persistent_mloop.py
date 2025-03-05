@@ -11,6 +11,7 @@ CONFIGURED_PORTS_FILE = "mloop_ports.json"
 SAISDKDUMP_PATH = "/saisdkdump_file"
 SERVICE_FILE = "persistent_mloop.conf"
 SERVICE_PATH = "/etc/supervisor/conf.d/"
+MAX_RETRIES = 10
 
 def port_sorting(port):
     """
@@ -94,13 +95,13 @@ class MloopConfig:
         retries = 0    
         subprocess.run(["sx_api_port_phys_loopback.py", "--cmd", "0", "--log_port", logical_port, "--loopback_type", str(self.loopback_type), "--force" ], 
                         shell=False, stdout=subprocess.PIPE, text=True)
-        while (not configured) and (retries < 10):
+        while (not configured) and (retries < MAX_RETRIES):
             try:
                 check_output_pipe(["echo", "y"], ["sx_api_port_tx_signal_set.py", "--log_port", logical_port, "--state", "up"])      
                 configured = True
             except:
                 retries += 1
-                if retries < 10:
+                if retries < MAX_RETRIES:
                     print("Retrying to config {0}".format(logical_port))
                 else:
                     print("Failed to config {0}".format(logical_port))
@@ -146,6 +147,12 @@ class MloopConfig:
             self.loopback_type = save_config.get("loopback_type")
 
         return True
+
+def check_switch_init():
+    result = subprocess.run(["sonic-db-cli", "APPL_DB", "EXISTS", "PORT_TABLE:PortInitDone"], 
+                            shell=False, capture_output=True, text=True)
+
+    return result.stdout.strip() == "1"
         
 
 def main():
@@ -158,6 +165,16 @@ def main():
     if args.ports and args.port_range:
         print("Error: must specify only one of the options - PORTS or PORT-RANGE")
         return 
+
+    retries = 0
+    while not check_switch_init() and retries < MAX_RETRIES:
+        print("Switch not ready, waiting..")
+        time.sleep(30)
+        retries += 1
+
+    if retries == MAX_RETRIES:    
+        print("Error: switch not initialized")
+        return
 
     service_file_path = os.path.join(SERVICE_PATH, SERVICE_FILE)
     if not os.path.exists(service_file_path):
