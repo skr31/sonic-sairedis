@@ -31,12 +31,6 @@ class MloopConfig:
         if ports:
             self.ports = ports
 
-        # The first time doesn't work for some reason
-        first_port = self.port_translation.get(self.ports[0])
-
-        if first_port:
-            self.config_port_to_mloop(first_port)
-
         for port in self.ports:
             logical_port = self.port_translation.get(port)
 
@@ -152,7 +146,6 @@ def check_switch_init():
     result = subprocess.run(["sonic-db-cli", "APPL_DB", "EXISTS", "PORT_TABLE:PortInitDone"], 
                             shell=False, capture_output=True, text=True)
 
-    print(result.stdout.strip())
     return result.stdout.strip() == "1"
         
 
