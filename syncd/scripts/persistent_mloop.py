@@ -51,7 +51,7 @@ class MloopConfig:
         for logical_port in logical_ports:
             self.config_port_to_mloop(logical_port)
 
-        self.save_mloop_ports()
+        self.save_config()
     
     def build_translation_dict(self):
         self.port_translation = {}
@@ -91,7 +91,8 @@ class MloopConfig:
                         shell=False, stdout=subprocess.PIPE, text=True)
         while (not configured) and (retries < MAX_RETRIES):
             try:
-                check_output_pipe(["echo", "y"], ["sx_api_port_tx_signal_set.py", "--log_port", logical_port, "--state", "up"])      
+                if self.loopback_type != 0:
+                    check_output_pipe(["echo", "y"], ["sx_api_port_tx_signal_set.py", "--log_port", logical_port, "--state", "up"])      
                 configured = True
             except:
                 retries += 1
