@@ -8,7 +8,7 @@ from sonic_py_common.general import check_output_pipe
 
 CONFIGURED_PORTS_PATH = "/etc/mloop_conf/"
 CONFIGURED_PORTS_FILE = "mloop_ports.json"
-SAISDKDUMP_PATH = "/saisdkdump_file"
+SAISDKDUMP_PATH = "/proc/dbg_dump/netdev_dump"
 SERVICE_FILE = "persistent_mloop.conf"
 SERVICE_PATH = "/etc/supervisor/conf.d/"
 MAX_RETRIES = 10
@@ -46,27 +46,25 @@ class MloopConfig:
 
         if not logical_ports:
             print("Invalid port range")
-            return
+            return False
         
         for logical_port in logical_ports:
             self.config_port_to_mloop(logical_port)
 
         self.save_config()
+        return True
     
     def build_translation_dict(self):
         self.port_translation = {}
 
-        subprocess.run(["saisdkdump", "-f", SAISDKDUMP_PATH], shell=False, stdout=subprocess.PIPE, text=True)
-
         with open(SAISDKDUMP_PATH, 'r') as saisdk_file:
             dump_lines = saisdk_file.read()
 
-        start_index = dump_lines.find("netdev_dump")
-        end_index = dump_lines.find("cmd_ifc_dump")
+        start_index = dump_lines.find("Ifindex")
 
-        port_table = dump_lines[start_index:end_index]
+        port_table = dump_lines[start_index:]
         port_table = port_table.split('\n')
-        port_table = port_table[4:]
+        port_table = port_table[1:]
 
         for line in port_table:
             line = line.split()
@@ -112,21 +110,21 @@ class MloopConfig:
             if port == port_range[0]:
                 found_first = True
 
-            if port == port_range[1]:
-                found_last = True
-
-            if found_first and not found_last:
+            if found_first:
                 logical_ports.append(logical_port)
                 self.ports.append(port)
-            elif found_last and not found_first:
-                print("Error: invalid range - end port found before start port")
 
-            if found_last:
+            if port == port_range[1]:
+                found_last = True
                 break
 
         if found_first and not found_last:
-            print(f"Error: invalid range - {port_range[0]} doesn't exist")
+            print(f"Error: invalid range - {port_range[1]} doesn't exist")
             return None
+
+        elif found_last and not found_first:
+            print("Error: invalid range - end port found before start port")
+
 
         return logical_ports if logical_ports else None
 
@@ -189,10 +187,9 @@ def main():
         print("Failed to parse ports from SDK file")
         return
 
-    print("Parsed logical ports from saisdkdump file")
-
     if args.port_range:
-        mloopconfig.config_range(args.port_range)
+        if not mloopconfig.config_range(args.port_range):
+            return
 
     elif args.ports:
         mloopconfig.config_ports(args.ports)
@@ -203,6 +200,7 @@ def main():
             return
         mloopconfig.config_ports()
 
+    print("Configured ports to MLOOP mode")
 
 if __name__ == "__main__":
     main()
